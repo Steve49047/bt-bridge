@@ -267,7 +267,6 @@ class BtService : Service() {
             ?: return error("Not connected to $address")
 
         return try {
-            socket.setSoTimeout(2000)
             val input = socket.inputStream
             val buffer = ByteArray(4096)
             val len = input.read(buffer)
