@@ -3,30 +3,34 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="16dp"
+    android:background="#FAFAFA">
 
     <TextView
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="BT Bridge"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
+        android:text="蓝牙桥接"
+        android:textSize="14sp"
+        android:textColor="#666"
+        android:layout_marginBottom="12dp"
+        android:drawableStart="@android:drawable/stat_sys_data_bluetooth"
+        android:drawablePadding="8dp" />
 
     <Button
         android:id="@+id/scanBtn"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Scan"
-        android:layout_marginBottom="8dp" />
+        android:layout_height="48dp"
+        android:text="扫描"
+        android:layout_marginBottom="12dp"
+        android:backgroundTint="#2196F3" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Devices:"
-        android:textSize="12sp"
-        android:textColor="#888"
+        android:text="附近设备"
+        android:textSize="13sp"
+        android:textColor="#999"
         android:layout_marginBottom="4dp" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -34,7 +38,9 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginBottom="8dp" />
+        android:layout_marginBottom="8dp"
+        android:background="#FFF"
+        android:elevation="1dp" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -45,43 +51,69 @@
         <EditText
             android:id="@+id/sendInput"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="44dp"
             android:layout_weight="1"
-            android:hint="Send data..."
+            android:hint="输入数据..."
             android:inputType="text"
-            android:enabled="false" />
+            android:enabled="false"
+            android:background="#FFF"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:textSize="14sp" />
 
         <Button
             android:id="@+id/sendBtn"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Send"
+            android:layout_height="44dp"
+            android:text="发送"
             android:enabled="false"
-            android:layout_marginStart="8dp" />
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#4CAF50" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
 
         <Button
             android:id="@+id/disconnectBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Disconnect"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="断开连接"
             android:enabled="false"
-            android:layout_marginStart="4dp" />
+            android:backgroundTint="#F44336"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/termuxBtn"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="Termux 模式"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#FF9800"
+            android:textSize="12sp" />
 
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="150dp"
-        android:background="#111"
+        android:layout_height="120dp"
+        android:background="#1A1A1A"
         android:padding="8dp">
 
         <TextView
             android:id="@+id/recvText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#0f0"
-            android:textSize="12sp"
-            android:fontFamily="monospace" />
+            android:textColor="#00E676"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:lineSpacingExtra="2dp" />
 
     </ScrollView>
 

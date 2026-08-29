@@ -22,26 +22,33 @@ class BtReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        Log.i(TAG, "BroadcastReceiver onReceive: action=${intent.action}")
+
         if (intent.action != "com.btbridge.CMD") return
 
         val pending = goAsync()
         Thread {
             try {
-                File(SHARED_DIR).mkdirs()
+                val dir = File(SHARED_DIR)
+                dir.mkdirs()
+
                 val cmdFile = File(CMD_FILE)
                 if (!cmdFile.exists()) {
+                    Log.w(TAG, "No cmd.json found")
                     writeResult(error("No command file"))
                     return@Thread
                 }
 
-                val json = JSONObject(cmdFile.readText())
+                val cmdText = cmdFile.readText()
+                Log.i(TAG, "Command: $cmdText")
                 cmdFile.delete()
 
+                val json = JSONObject(cmdText)
                 val cmd = json.getString("cmd")
-                Log.i(TAG, "Received command: $cmd")
 
                 val result = processCommand(cmd, json)
                 writeResult(result)
+                Log.i(TAG, "Result: $result")
             } catch (e: Exception) {
                 Log.e(TAG, "Error: ${e.message}", e)
                 writeResult(error(e.message ?: "Unknown error"))
@@ -61,9 +68,9 @@ class BtReceiver : BroadcastReceiver() {
             "send" -> sendData(json.getString("address"), json.getString("data"))
             "read" -> readData(json.getString("address"))
             "bonded" -> listBonded()
-            "list_devices" -> ok().put("devices", JSONArray()).put("count", 0).put("note", "Use app UI to scan")
-            "scan", "scan_start", "scan_stop" -> ok().put("note", "Use app UI to scan")
-            else -> error("Unknown command: $cmd")
+            "scan", "scan_start", "scan_stop", "list_devices" ->
+                ok().put("note", "请在 APP 内扫描")
+            else -> error("未知命令: $cmd")
         }
     }
 
@@ -74,13 +81,13 @@ class BtReceiver : BroadcastReceiver() {
                 .put("name", adapter.name ?: "Unknown")
                 .put("address", adapter.address ?: "Unknown")
         } else {
-            error("No Bluetooth adapter")
+            error("无蓝牙适配器")
         }
     }
 
     private fun enableBt(): JSONObject {
         val adapter = BluetoothAdapter.getDefaultAdapter()
-            ?: return error("No Bluetooth adapter")
+            ?: return error("无蓝牙适配器")
         if (!adapter.isEnabled) {
             @Suppress("DEPRECATION")
             adapter.enable()
@@ -91,7 +98,7 @@ class BtReceiver : BroadcastReceiver() {
 
     private fun disableBt(): JSONObject {
         val adapter = BluetoothAdapter.getDefaultAdapter()
-            ?: return error("No Bluetooth adapter")
+            ?: return error("无蓝牙适配器")
         if (adapter.isEnabled) {
             @Suppress("DEPRECATION")
             adapter.disable()
@@ -102,7 +109,7 @@ class BtReceiver : BroadcastReceiver() {
 
     private fun listBonded(): JSONObject {
         val adapter = BluetoothAdapter.getDefaultAdapter()
-            ?: return error("No Bluetooth adapter")
+            ?: return error("无蓝牙适配器")
         val arr = JSONArray()
         adapter.bondedDevices?.forEach { dev ->
             arr.put(JSONObject().apply {
@@ -115,20 +122,19 @@ class BtReceiver : BroadcastReceiver() {
 
     private fun connect(address: String): JSONObject {
         val adapter = BluetoothAdapter.getDefaultAdapter()
-            ?: return error("No Bluetooth adapter")
-
-        val device = adapter.getRemoteDevice(address)
+            ?: return error("无蓝牙适配器")
 
         if (connectedSockets.containsKey(address)) {
             return ok().put("connected", true).put("address", address)
         }
 
+        val device = adapter.getRemoteDevice(address)
         val socket = try {
             device.createRfcommSocketToServiceRecord(
                 UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
             )
         } catch (e: Exception) {
-            return error("Socket creation failed: ${e.message}")
+            return error("创建 Socket 失败: ${e.message}")
         }
 
         return try {
@@ -138,7 +144,7 @@ class BtReceiver : BroadcastReceiver() {
             ok().put("connected", true).put("address", address)
         } catch (e: Exception) {
             try { socket.close() } catch (_: Exception) {}
-            error("Connect failed: ${e.message}")
+            error("连接失败: ${e.message}")
         }
     }
 
@@ -148,26 +154,26 @@ class BtReceiver : BroadcastReceiver() {
             try { socket.close() } catch (_: Exception) {}
             ok().put("disconnected", true).put("address", address)
         } else {
-            error("Not connected to $address")
+            error("未连接到 $address")
         }
     }
 
     private fun sendData(address: String, data: String): JSONObject {
         val socket = connectedSockets[address]
-            ?: return error("Not connected to $address")
+            ?: return error("未连接到 $address")
         return try {
             socket.outputStream.write(data.toByteArray())
             socket.outputStream.flush()
             ok().put("sent", true).put("bytes", data.toByteArray().size)
         } catch (e: Exception) {
             connectedSockets.remove(address)
-            error("Send failed: ${e.message}")
+            error("发送失败: ${e.message}")
         }
     }
 
     private fun readData(address: String): JSONObject {
         val socket = connectedSockets[address]
-            ?: return error("Not connected to $address")
+            ?: return error("未连接到 $address")
         return try {
             val input = socket.inputStream
             val buffer = ByteArray(4096)
@@ -179,7 +185,7 @@ class BtReceiver : BroadcastReceiver() {
             }
         } catch (e: Exception) {
             connectedSockets.remove(address)
-            error("Read failed: ${e.message}")
+            error("读取失败: ${e.message}")
         }
     }
 
@@ -190,9 +196,8 @@ class BtReceiver : BroadcastReceiver() {
         try {
             File(SHARED_DIR).mkdirs()
             File(RESULT_FILE).writeText(json.toString())
-            Log.d(TAG, "Result: $json")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to write result: ${e.message}")
+            Log.e(TAG, "写入结果失败: ${e.message}")
         }
     }
 }

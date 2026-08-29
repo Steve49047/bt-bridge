@@ -3,8 +3,12 @@ package com.btbridge
 import android.Manifest
 import android.bluetooth.*
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -17,6 +21,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.io.File
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
@@ -28,15 +33,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sendBtn: Button
     private lateinit var recvText: TextView
     private lateinit var disconnectBtn: Button
+    private lateinit var termuxBtn: Button
 
-    private val adapter: BluetoothAdapter? by lazy {
+    private val btAdapter: BluetoothAdapter? by lazy {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
     }
     private val discoveredDevices = mutableListOf<BluetoothDevice>()
     private val deviceAdapter = DeviceAdapter()
     private var connectedSocket: BluetoothSocket? = null
     private var currentDevice: BluetoothDevice? = null
-
     private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
     private val PERMISSIONS = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -54,7 +59,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val scanReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+        override fun onReceive(ctx: android.content.Context, intent: android.content.Intent) {
             when (intent.action) {
                 BluetoothDevice.ACTION_FOUND -> {
                     val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -72,8 +77,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                     runOnUiThread {
-                        scanBtn.text = "Scan"
-                        Toast.makeText(this@MainActivity, "Scan finished", Toast.LENGTH_SHORT).show()
+                        scanBtn.text = "扫描"
+                        Toast.makeText(this@MainActivity, "扫描完成", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -91,89 +96,97 @@ class MainActivity : AppCompatActivity() {
         sendBtn = findViewById(R.id.sendBtn)
         recvText = findViewById(R.id.recvText)
         disconnectBtn = findViewById(R.id.disconnectBtn)
+        termuxBtn = findViewById(R.id.termuxBtn)
 
         deviceList.layoutManager = LinearLayoutManager(this)
         deviceList.adapter = deviceAdapter
-
         deviceAdapter.onItemClick = { device -> connectToDevice(device) }
 
         scanBtn.setOnClickListener { toggleScan() }
         sendBtn.setOnClickListener { sendData() }
         disconnectBtn.setOnClickListener { disconnect() }
+        termuxBtn.setOnClickListener { setupTermux() }
 
-        if (!hasPermissions()) {
-            requestPermissions()
-        } else {
-            checkBtEnabled()
-        }
+        sendBtn.isEnabled = false
+        disconnectBtn.isEnabled = false
+
+        requestAllPermissions()
     }
 
-    private fun hasPermissions(): Boolean {
-        return PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    private fun requestAllPermissions() {
+        val perms = PERMISSIONS.toMutableList()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    private fun requestPermissions() {
-        ActivityCompat.requestPermissions(this, PERMISSIONS, 100)
+        ActivityCompat.requestPermissions(this, perms.toTypedArray(), 100)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 100) {
-            if (hasPermissions()) {
-                checkBtEnabled()
+            checkStoragePermission()
+        }
+    }
+
+    private fun checkStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                Toast.makeText(this, "请授予文件管理权限", Toast.LENGTH_LONG).show()
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                intent.data = Uri.parse("package:$packageName")
+                startActivity(intent)
             } else {
-                statusText.text = "Permissions required"
+                checkBtEnabled()
             }
+        } else {
+            checkBtEnabled()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+            checkBtEnabled()
         }
     }
 
     private fun checkBtEnabled() {
-        if (adapter == null) {
-            statusText.text = "No Bluetooth adapter"
+        if (btAdapter == null) {
+            statusText.text = "未找到蓝牙适配器"
             return
         }
-        if (adapter!!.isEnabled) {
-            statusText.text = "Bluetooth ON - ${adapter!!.name}"
+        if (btAdapter!!.isEnabled) {
+            statusText.text = "蓝牙已开启 - ${btAdapter!!.name}"
         } else {
             @Suppress("DEPRECATION")
-            adapter!!.enable()
-            statusText.text = "Enabling Bluetooth..."
-            scanBtn.postDelayed({ checkBtEnabled() }, 1000)
+            btAdapter!!.enable()
+            statusText.text = "正在开启蓝牙..."
+            statusText.postDelayed({ checkBtEnabled() }, 1000)
         }
     }
 
     private fun toggleScan() {
-        if (adapter?.isDiscovering == true) {
-            adapter?.cancelDiscovery()
-            scanBtn.text = "Scan"
-            unregisterScanReceiver()
+        if (btAdapter?.isDiscovering == true) {
+            btAdapter?.cancelDiscovery()
+            scanBtn.text = "扫描"
+            try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
         } else {
             discoveredDevices.clear()
             deviceAdapter.notifyDataSetChanged()
-            registerScanReceiver()
-            adapter?.startDiscovery()
-            scanBtn.text = "Scanning..."
-            statusText.text = "Scanning..."
+            val filter = android.content.IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_FOUND)
+                addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+            }
+            registerReceiver(scanReceiver, filter)
+            btAdapter?.startDiscovery()
+            scanBtn.text = "停止扫描"
+            statusText.text = "正在扫描..."
         }
-    }
-
-    private fun registerScanReceiver() {
-        val filter = android.content.IntentFilter().apply {
-            addAction(BluetoothDevice.ACTION_FOUND)
-            addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
-        }
-        registerReceiver(scanReceiver, filter)
-    }
-
-    private fun unregisterScanReceiver() {
-        try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
     }
 
     private fun connectToDevice(device: BluetoothDevice) {
-        statusText.text = "Connecting to ${device.name ?: device.address}..."
-        adapter?.cancelDiscovery()
+        btAdapter?.cancelDiscovery()
+        statusText.text = "正在连接 ${device.name ?: device.address}..."
 
         Thread {
             try {
@@ -183,19 +196,17 @@ class MainActivity : AppCompatActivity() {
                 currentDevice = device
 
                 runOnUiThread {
-                    statusText.text = "Connected: ${device.name ?: device.address}"
+                    statusText.text = "已连接: ${device.name ?: device.address}"
                     sendBtn.isEnabled = true
                     disconnectBtn.isEnabled = true
                     scanBtn.isEnabled = false
-                    Toast.makeText(this, "Connected!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "连接成功", Toast.LENGTH_SHORT).show()
                 }
 
-                // Start reading in background
                 startReading(socket)
             } catch (e: Exception) {
                 runOnUiThread {
-                    statusText.text = "Connect failed: ${e.message}"
-                    Toast.makeText(this, "Connect failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    statusText.text = "连接失败: ${e.message}"
                 }
             }
         }.start()
@@ -210,15 +221,11 @@ class MainActivity : AppCompatActivity() {
                     val len = input.read(buffer)
                     if (len > 0) {
                         val data = String(buffer, 0, len)
-                        runOnUiThread {
-                            recvText.append("<< $data\n")
-                        }
+                        runOnUiThread { recvText.append("<< $data\n") }
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    recvText.append("Connection lost: ${e.message}\n")
-                }
+                runOnUiThread { recvText.append("连接断开\n") }
             }
         }.start()
     }
@@ -226,13 +233,11 @@ class MainActivity : AppCompatActivity() {
     private fun sendData() {
         val data = sendInput.text.toString()
         if (data.isEmpty()) return
-
         val socket = connectedSocket
         if (socket == null || !socket.isConnected) {
-            Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "未连接", Toast.LENGTH_SHORT).show()
             return
         }
-
         Thread {
             try {
                 socket.outputStream.write(data.toByteArray())
@@ -242,22 +247,17 @@ class MainActivity : AppCompatActivity() {
                     sendInput.text.clear()
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(this, "Send failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                runOnUiThread { Toast.makeText(this, "发送失败", Toast.LENGTH_SHORT).show() }
             }
         }.start()
     }
 
     private fun disconnect() {
-        try {
-            connectedSocket?.close()
-        } catch (_: Exception) {}
+        try { connectedSocket?.close() } catch (_: Exception) {}
         connectedSocket = null
         currentDevice = null
-
         runOnUiThread {
-            statusText.text = "Disconnected"
+            statusText.text = "已断开"
             sendBtn.isEnabled = false
             disconnectBtn.isEnabled = false
             scanBtn.isEnabled = true
@@ -265,39 +265,46 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupTermux() {
+        // Disconnect from app, let Termux take over
+        disconnect()
+
+        // Write shared socket path for Termux
+        Toast.makeText(this, "已切换到 Termux 模式", Toast.LENGTH_SHORT).show()
+        statusText.text = "Termux 模式 - 请在终端操作"
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        unregisterScanReceiver()
-        adapter?.cancelDiscovery()
+        try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
+        btAdapter?.cancelDiscovery()
         try { connectedSocket?.close() } catch (_: Exception) {}
     }
 
-    inner class DeviceAdapter : RecyclerView.Adapter<DeviceAdapter.ViewHolder>() {
+    inner class DeviceAdapter : RecyclerView.Adapter<DeviceAdapter.VH>() {
         var onItemClick: ((BluetoothDevice) -> Unit)? = null
 
-        inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-            val nameText: TextView = view.findViewById(R.id.deviceName)
-            val addrText: TextView = view.findViewById(R.id.deviceAddr)
-            val typeText: TextView = view.findViewById(R.id.deviceType)
+        inner class VH(v: View) : RecyclerView.ViewHolder(v) {
+            val name: TextView = v.findViewById(R.id.deviceName)
+            val addr: TextView = v.findViewById(R.id.deviceAddr)
+            val type: TextView = v.findViewById(R.id.deviceType)
         }
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            val view = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_device, parent, false)
-            return ViewHolder(view)
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            return VH(LayoutInflater.from(parent.context).inflate(R.layout.item_device, parent, false))
         }
 
-        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            val device = discoveredDevices[position]
-            holder.nameText.text = device.name ?: "Unknown"
-            holder.addrText.text = device.address
-            holder.typeText.text = when (device.type) {
-                BluetoothDevice.DEVICE_TYPE_CLASSIC -> "Classic"
-                BluetoothDevice.DEVICE_TYPE_DUAL -> "Dual"
+        override fun onBindViewHolder(holder: VH, pos: Int) {
+            val dev = discoveredDevices[pos]
+            holder.name.text = dev.name ?: "未知设备"
+            holder.addr.text = dev.address
+            holder.type.text = when (dev.type) {
+                BluetoothDevice.DEVICE_TYPE_CLASSIC -> "经典"
+                BluetoothDevice.DEVICE_TYPE_DUAL -> "双模"
                 BluetoothDevice.DEVICE_TYPE_LE -> "BLE"
                 else -> "?"
             }
-            holder.itemView.setOnClickListener { onItemClick?.invoke(device) }
+            holder.itemView.setOnClickListener { onItemClick?.invoke(dev) }
         }
 
         override fun getItemCount() = discoveredDevices.size
