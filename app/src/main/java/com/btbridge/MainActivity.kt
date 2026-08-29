@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.POST_NOTIFICATIONS,
         )
-        val needed = basic.filter {
+        val needed = basic.filterTo(mutableListOf()) {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
@@ -45,7 +45,7 @@ class MainActivity : AppCompatActivity() {
             val s = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
             s.forEach {
                 if (ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED)
-                    needed.toList().add(it)
+                    needed.add(it)
             }
         }
 

@@ -267,15 +267,14 @@ class BtService : Service() {
             ?: return error("Not connected to $address")
 
         return try {
-            socket.inputStream.let { input ->
-                socket.soTimeout = 2000
-                val buffer = ByteArray(4096)
-                val len = input.read(buffer)
-                if (len > 0) {
-                    ok().put("data", String(buffer, 0, len)).put("bytes", len)
-                } else {
-                    ok().put("data", "").put("bytes", 0)
-                }
+            socket.soTimeout = 2000
+            val input = socket.inputStream
+            val buffer = ByteArray(4096)
+            val len = input.read(buffer)
+            if (len > 0) {
+                ok().put("data", String(buffer, 0, len)).put("bytes", len)
+            } else {
+                ok().put("data", "").put("bytes", 0)
             }
         } catch (e: java.net.SocketTimeoutException) {
             ok().put("data", "").put("bytes", 0)
