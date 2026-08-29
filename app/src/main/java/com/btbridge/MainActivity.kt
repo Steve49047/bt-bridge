@@ -77,8 +77,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                     runOnUiThread {
-                        scanBtn.text = "扫描"
-                        Toast.makeText(this@MainActivity, "扫描完成", Toast.LENGTH_SHORT).show()
+                        if (scanBtn.isEnabled) {
+                            scanBtn.text = "扫描"
+                            Toast.makeText(this@MainActivity, "扫描完成", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -187,14 +189,44 @@ class MainActivity : AppCompatActivity() {
     private fun connectToDevice(device: BluetoothDevice) {
         btAdapter?.cancelDiscovery()
         statusText.text = "正在连接 ${device.name ?: device.address}..."
+        recvText.text = ""
 
         Thread {
+            var socket: BluetoothSocket? = null
+
+            // 方式1: 标准 SPP UUID
             try {
-                val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+                socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
                 socket.connect()
+            } catch (e: Exception) {
+                try { socket?.close() } catch (_: Exception) {}
+                socket = null
+
+                // 方式2: 反射 channel 1
+                try {
+                    val method = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                    socket = method.invoke(device, 1) as BluetoothSocket
+                    socket.connect()
+                } catch (e2: Exception) {
+                    try { socket?.close() } catch (_: Exception) {}
+                    socket = null
+                }
+            }
+
+            // 方式3: Insecure
+            if (socket == null) {
+                try {
+                    socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+                    socket.connect()
+                } catch (e: Exception) {
+                    try { socket?.close() } catch (_: Exception) {}
+                    socket = null
+                }
+            }
+
+            if (socket != null && socket.isConnected) {
                 connectedSocket = socket
                 currentDevice = device
-
                 runOnUiThread {
                     statusText.text = "已连接: ${device.name ?: device.address}"
                     sendBtn.isEnabled = true
@@ -202,11 +234,12 @@ class MainActivity : AppCompatActivity() {
                     scanBtn.isEnabled = false
                     Toast.makeText(this, "连接成功", Toast.LENGTH_SHORT).show()
                 }
-
                 startReading(socket)
-            } catch (e: Exception) {
+            } else {
+                try { socket?.close() } catch (_: Exception) {}
                 runOnUiThread {
-                    statusText.text = "连接失败: ${e.message}"
+                    statusText.text = "连接失败，请确认设备支持串口通信"
+                    Toast.makeText(this, "连接失败", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
